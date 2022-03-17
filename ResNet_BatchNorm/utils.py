@@ -22,7 +22,7 @@ def ensemble_loss(output, target):
     loss = 0
 
     for i in range(output.shape[1]):
-        loss += F.cross_entropy(output[:,i,:], target[:,i], reduction='sum')
+        loss += F.cross_entropy(output[:,i,:], target[:,i], reduction='mean')
 
     if output.ndim == 2:
         output = output.reshape(output.shape[0], target.shape[1], -1)

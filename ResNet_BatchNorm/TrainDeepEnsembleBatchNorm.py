@@ -74,12 +74,21 @@ if dataset =='cifar10':
 lr_ = 0.1
 momentum_ = 0.9
 wd_ = 1e-4
-optimizer = torch.optim.SGD(EnsembleNet.parameters(), lr_,
-                            momentum= momentum_,
-                            weight_decay= wd_)
+# optimizer = torch.optim.SGD(EnsembleNet.parameters(), lr_,
+#                             momentum= momentum_,
+#                             weight_decay= wd_)
 
-lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
-                                                    milestones=[82, 123], last_epoch= -1 )
+# lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
+#                                                     milestones=[82, 123], last_epoch= -1 )
+
+
+optimizer_list = [torch.optim.SGD(m.parameters(), lr=lr_, momentum= momentum_, weight_decay= wd_) for m in
+                      EnsembleNet._get_list()]  
+
+lr_scheduler_list = [torch.optim.lr_scheduler.MultiStepLR(opt,
+                                                milestones=[82, 123], last_epoch= -1 ) for opt in
+                    optimizer_list]  
+
 
 Best_Acc = 0
 for epoch in range(1, epochs):
@@ -92,23 +101,32 @@ for epoch in range(1, epochs):
         
         targets = target.unsqueeze(1).expand(*target.shape[:1], num_ensembles,
                                             *target.shape[1:])
-                
+        
+        # optimizer.zero_grad()
+        for opt in optimizer_list:
+            opt.zero_grad()
         output, _ = EnsembleNet(data)
-        loss, avg_acc = ensemble_loss(output, targets)
+        
+        loss, avg_acc = ensemble_loss(output, targets)        
+        # loss, avg_acc = classification_loss(output, targets)
 
-        optimizer.zero_grad()
         loss.backward()
-        optimizer.step()
+        # optimizer.step()
+        for opt in optimizer_list:
+            opt.step()
 
         train_correct.append(avg_acc.item())
         train_loss += loss.item()
-    lr_scheduler.step()
+    
+    for lr_s in lr_scheduler_list:
+        lr_s.step()
     train_loss /= len(train_loader)
-    train_acc = torch.as_tensor(avg_acc).mean() * 100
-    print('Epoch: {} --> {} dataset Deep_Ensemble_BatchNorm Training Loss = {:.4f}, Ensemble Train Accuracy =  {:.2f}%\n'.format(
+    train_acc = torch.as_tensor(train_correct).mean() * 100
+    print('Epoch: {} ResNet-A DeepEnsemble_BatchNorm--> {} Dataset Training Loss = {:.4f}, Train Accuracy =  {:.2f}%\n'.format(
         epoch, dataset, train_loss, train_acc))
 
-    EnsembleNet.eval()    
+    EnsembleNet.eval()
+
     with torch.no_grad():
         correct = 0
         for batch_idx, (data, target) in tqdm(enumerate(test_loader), total=len(test_loader), smoothing=0.9):
@@ -117,11 +135,11 @@ for epoch in range(1, epochs):
             _, acc = _classification_vote(output, target)
             correct += acc.item()
         
-        print('Epoch: {} , Deep_Ensemble_BatchNorm Clean Test Accuracy =  {:.2f}%\n'.format(
+        print('Epoch: {} , DeepEnsemble_BatchNorm Test Accuracy =  {:.2f}%\n'.format(
             epoch, 100. * correct / len(test_loader.dataset)))
 
 
     if train_acc > Best_Acc:
-        modelName =  dataset + 'Deep_Ensemble_BatchNorm.pt'
+        modelName =  dataset + 'DeepEnsemble_BatchNorm.pt'
         torch.save(EnsembleNet.state_dict(), modelName)
         Best_Acc = train_acc

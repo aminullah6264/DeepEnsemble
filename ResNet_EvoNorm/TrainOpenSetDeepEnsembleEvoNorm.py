@@ -202,7 +202,7 @@ def main():
                 dataset1 = torchvision.datasets.CIFAR10('cifar10Data', train=True, download=True,
                                                     transform= torchvision.transforms.Compose([
                 torchvision.transforms.RandomHorizontalFlip(),
-                torchvision.transforms.RandomCrop(24, 0),
+                torchvision.transforms.RandomCrop(32, 4),
                 transform ])   )
 
                 dataset2 = torchvision.datasets.CIFAR10('cifar10Data', train=False,
@@ -211,7 +211,7 @@ def main():
                 dataset1 = torchvision.datasets.CIFAR10('cifar10Data', train=True, download=True,
                                                     transform= torchvision.transforms.Compose([
                 torchvision.transforms.RandomHorizontalFlip(),
-                torchvision.transforms.RandomCrop(24, 0),
+                torchvision.transforms.RandomCrop(32, 4),
                 transform ])   )
 
                 dataset1,_2 =torch.utils.data.random_split(dataset1,[int(0.1*len(dataset1)),int(0.9*len(dataset1))])
@@ -229,7 +229,7 @@ def main():
 
             testset_outlier = Subset(dataset2, get_classes(dataset2, outlier_label_idx))
 
-            train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle = True)
+            train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size)
             test_loader = torch.utils.data.DataLoader(testset, batch_size=128)
 
             outlier_loader = torch.utils.data.DataLoader(testset_outlier, batch_size=128)
@@ -238,7 +238,7 @@ def main():
             dataset1 = torchvision.datasets.CIFAR10('cifar10Data', train=True, download=True,
                                                     transform= torchvision.transforms.Compose([
                 torchvision.transforms.RandomHorizontalFlip(),
-                torchvision.transforms.RandomCrop(24, 0),
+                torchvision.transforms.RandomCrop(32, 4),
                 transform ])   )
 
                 

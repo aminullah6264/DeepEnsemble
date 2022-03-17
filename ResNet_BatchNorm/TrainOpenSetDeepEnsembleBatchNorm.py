@@ -229,7 +229,7 @@ def main():
 
             testset_outlier = Subset(dataset2, get_classes(dataset2, outlier_label_idx))
 
-            train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle = True)
+            train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size)
             test_loader = torch.utils.data.DataLoader(testset, batch_size=128)
 
             outlier_loader = torch.utils.data.DataLoader(testset_outlier, batch_size=128)
@@ -249,17 +249,9 @@ def main():
 
         EnsembleNet = CifarEnsembleRes(num_ensembles=num_ensembles).to(DEVICE)
 
-    # if not args.SGLD:
-    #     optimizer_list = [optim.Adam(m.parameters(), lr=initial_lr, weight_decay=1e-4) for m in
-    #                   EnsembleNet._get_list()]  # , weight_decay=1e-4
-    # else:
-    #     optimizer_list = [SGLD(m.parameters(), lr=initial_lr, weight_decay=5e-4,momentum=0.9,nesterov=True) for m in
-    #                       EnsembleNet._get_list()]  # , weight_decay=1e-4
-    #     # optimizer_list = [SGLD(m.parameters(), lr=initial_lr, weight_decay=5e-4) for m in
-    #     #                   EnsembleNet._get_list()]  # , weight_decay=1e-4
 
-    optimizer_list = [torch.optim.SGD(m.parameters(), lr=initial_lr, weight_decay=1e-4) for m in
-                      EnsembleNet._get_list()]  
+    optimizer_list = [torch.optim.SGD(m.parameters(), lr=initial_lr, momentum= 0.9, weight_decay= 1e-4) for m in
+                      EnsembleNet._get_list()]     
 
     lr_scheduler_list = [torch.optim.lr_scheduler.MultiStepLR(opt,
                                                     milestones=[82, 123], last_epoch= -1 ) for opt in

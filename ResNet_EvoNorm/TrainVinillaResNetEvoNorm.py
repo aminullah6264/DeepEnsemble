@@ -25,7 +25,7 @@ torchvision.transforms.Normalize([0.4914, 0.4822, 0.4465],
 dataset1 = torchvision.datasets.CIFAR10('cifar10Data', train=True, download=True, 
                                                     transform= torchvision.transforms.Compose([
                 torchvision.transforms.RandomHorizontalFlip(),
-                torchvision.transforms.RandomCrop(24, 0),
+                torchvision.transforms.RandomCrop(32, 4),
                 transform ])   )
 dataset2 = torchvision.datasets.CIFAR10('cifar10Data', train=False,
                 transform=transform)
