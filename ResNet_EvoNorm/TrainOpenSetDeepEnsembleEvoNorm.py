@@ -147,7 +147,7 @@ def main():
                         required=False)
     parser.add_argument('--dataset',type=str,default='cifar10',help='Dataset to train upon')
     parser.add_argument('--num_ensemble',type=int,default=10,help='No. of models in the ensemble')
-    parser.add_argument('--epochs',type=int,default=100,help='No. of epochs to train the model')
+    parser.add_argument('--epochs',type=int,default=200,help='No. of epochs to train the model')
     parser.add_argument('--SGLD',action='store_true',default=False,help='Enable SGLD optimizer')
     parser.add_argument('--debug',action='store_true',default=False,help='Enable debug mode')
     parser.add_argument('--batch_size',type=int,default=128,help='Batch size')
@@ -258,13 +258,23 @@ def main():
     #     # optimizer_list = [SGLD(m.parameters(), lr=initial_lr, weight_decay=5e-4) for m in
     #     #                   EnsembleNet._get_list()]  # , weight_decay=1e-4
 
-    optimizer_list = [torch.optim.SGD(m.parameters(), lr=initial_lr, weight_decay=1e-4) for m in
-                      EnsembleNet._get_list()]  
+    # optimizer_list = [torch.optim.SGD(m.parameters(), lr=initial_lr, weight_decay=1e-4) for m in
+    #                   EnsembleNet._get_list()]  
 
-    lr_scheduler_list = [torch.optim.lr_scheduler.MultiStepLR(opt,
-                                                    milestones=[82, 123], last_epoch= -1 ) for opt in
-                      optimizer_list]  
+    # lr_scheduler_list = [torch.optim.lr_scheduler.MultiStepLR(opt,
+    #                                                 milestones=[82, 123], last_epoch= -1 ) for opt in
+    #                   optimizer_list]  
 
+
+    lr_ = 0.1
+    momentum_ = 0.9
+    wd_ = 1e-4
+    optimizer = torch.optim.SGD(EnsembleNet.parameters(), lr_,
+                                momentum= momentum_,
+                                weight_decay= wd_)
+
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
+                                                        milestones=[82, 123], last_epoch= -1 )
 
     Best_Acc = 0
     for epoch in range(1, epochs):
@@ -272,16 +282,18 @@ def main():
         train_correct = []
 
         EnsembleNet.train()
-        if args.SGLD:
-            learning_rate_scheduler(optimizer_list,initial_lr=initial_lr,current_epoch=epoch,gamma=0.1)
+        # if args.SGLD:
+        #     learning_rate_scheduler(optimizer_list,initial_lr=initial_lr,current_epoch=epoch,gamma=0.1)
         for batch_idx, (data, target) in tqdm(enumerate(train_loader), total=len(train_loader), smoothing=0.9):
             data, target = data.to(DEVICE), target.to(DEVICE)
 
             targets = target.unsqueeze(1).expand(*target.shape[:1], num_ensembles,
                                                  *target.shape[1:])
 
-            for opt in optimizer_list:
-                opt.zero_grad()
+            # for opt in optimizer_list:
+            #     opt.zero_grad()
+            optimizer.zero_grad()
+
             output, _ = EnsembleNet(data)
 
             loss, avg_acc = ensemble_loss(output, targets)
@@ -289,19 +301,23 @@ def main():
             # loss, avg_acc = classification_loss(output, targets)
 
             loss.backward()
-            for opt in optimizer_list:
-                opt.step()
+            # for opt in optimizer_list:
+            #     opt.step()
+            optimizer.step()
+
 
             train_correct.append(avg_acc.item())
             train_loss += loss.item()
 
 
-        for lr_s in lr_scheduler_list:
-                lr_s.step()
+        # for lr_s in lr_scheduler_list:
+        #         lr_s.step()
+
+        lr_scheduler.step()
         train_loss /= len(train_loader)
         train_acc = torch.as_tensor(train_correct).mean() * 100
 
-        print('Epoch: {} ResNet-A DeepEnsemble_OpenSet_EvoNorm--> {} Dataset Training Loss = {:.4f}, Train Accuracy =  {:.2f}%, \n'.format(
+        print('Epoch: {} ResNet-18 DeepEnsemble_OpenSet_EvoNorm--> {} Dataset Training Loss = {:.4f}, Train Accuracy =  {:.2f}%, \n'.format(
             epoch, dataset, train_loss, train_acc))
 
         EnsembleNet.eval()
@@ -312,7 +328,8 @@ def main():
             for batch_idx, (data, target) in tqdm(enumerate(test_loader), total=len(test_loader), smoothing=0.9):
                 data, target = data.to(DEVICE), target.to(DEVICE)
                 output, _ = EnsembleNet(data)
-                preds_tensor.append(output)
+                probs = F.softmax(output, dim=-1)
+                preds_tensor.append(probs)
                 targets_tensor.append(target)
                 _, acc = _classification_vote(output, target)
                 correct += acc.item()

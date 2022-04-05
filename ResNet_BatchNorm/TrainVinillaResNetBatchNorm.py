@@ -7,7 +7,7 @@ import torch.optim as optim
 import numpy as np
 from tqdm import tqdm
 from models import  ResNet18
-from ResNet_BatchNorm.utils import classification_loss, _classification_vote
+from utils import classification_loss, _classification_vote
 # import torchsummary
 
 dataset = 'cifar10'  # can be 'mnist', 'f_mnist', 'cifar10'

@@ -121,6 +121,6 @@ for epoch in range(1, epochs):
 
 
     if train_acc > Best_Acc:
-        modelName =  dataset + 'Deep_Ensemble_EvoNorm.pt'
+        modelName =  dataset + 'Deep_Ensemble_EvoNorm_No_DataAugmenation.pt'
         torch.save(EnsembleNet.state_dict(), modelName)
         Best_Acc = train_acc
