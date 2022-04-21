@@ -257,8 +257,7 @@ def main():
             # for opt in optimizer_list:
             #     opt.zero_grad()
             output, _ = EnsembleNet(data)
-            
-            # loss, avg_acc = ensemble_loss(output, targets)        
+                 
             loss, avg_acc = classification_loss(output, targets)
 
             loss.backward()
@@ -276,7 +275,7 @@ def main():
         train_loss /= len(train_loader)
         train_acc = torch.as_tensor(train_correct).mean() * 100
 
-        print('Epoch: {} ResNet-18 DeepEnsemble_OpenSet_BatchNorm--> {} Dataset Training Loss = {:.4f}, Train Accuracy =  {:.2f}%, \n'.format(
+        print('Epoch: {} ResNet-18 DeepEnsemble_OpenSet_NF_ResNet--> {} Dataset Training Loss = {:.4f}, Train Accuracy =  {:.2f}%, \n'.format(
             epoch, dataset, train_loss, train_acc))
 
         EnsembleNet.eval()
@@ -311,7 +310,7 @@ def main():
         #     Best_Acc = train_acc
         if uncertainty_eval:
             if auc_entropy > best_auc_entropy:
-                modelName = dataset + 'DeepEnsemble_OpenSet_BatchNorm_auc_entropy.pt'
+                modelName = dataset + 'DeepEnsemble_OpenSet_NF_ResNet_auc_entropy.pt'
                 torch.save(EnsembleNet.state_dict(), modelName)
                 best_auc_entropy = auc_entropy
 
