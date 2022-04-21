@@ -11,10 +11,9 @@ import pdb
 from argparse import ArgumentParser
 from torch.utils.data import Subset
 from tqdm import tqdm
-from models import MNISTEnsemble, CifarEnsemble, FMNISTEnsemble, CifarEnsembleRes
+from nf_resnet import CifarEnsembleRes
 from utils import classification_loss, _classification_vote
 from sklearn.metrics import roc_auc_score
-from SGLD import SGLD
 # torch.set_default_tensor_type('torch.cuda.FloatTensor')
 # import torchsummary
 
@@ -101,6 +100,7 @@ def eval_uncertainty(model, test_loader, outlier_loader, num_particles=None):
         mean_probs = probs.mean(0)
         mean_probs_outlier = probs_outlier.mean(0)
 
+
         entropy = torch.distributions.Categorical(mean_probs).entropy()
         entropy_outlier = torch.distributions.Categorical(
             mean_probs_outlier).entropy()
@@ -160,34 +160,6 @@ def main():
     epochs=args.epochs
     batch_size=args.batch_size
     initial_lr=args.lr
-
-    if dataset == 'mnist':
-        transform = torchvision.transforms.Compose([
-            torchvision.transforms.ToTensor(), torchvision.transforms.Normalize([0.1307, ], [0.3081, ])])
-
-        dataset1 = torchvision.datasets.MNIST('MnistData', train=True, download=True,
-                                              transform=transform)
-        dataset2 = torchvision.datasets.MNIST('MnistData', train=False,
-                                              transform=transform)
-        train_loader = torch.utils.data.DataLoader(dataset1, batch_size=5000)
-        test_loader = torch.utils.data.DataLoader(dataset2, batch_size=5000)
-
-        EnsembleNet = MNISTEnsemble(num_ensembles=num_ensembles).to(DEVICE)
-
-    if dataset == 'f_mnist':
-        transform = torchvision.transforms.Compose([
-            torchvision.transforms.ToTensor(),
-            # torchvision.transforms.Normalize([0.73, ], [0.90, ])
-        ])
-
-        dataset1 = torchvision.datasets.FashionMNIST('F_MnistData', train=True, download=True,
-                                                     transform=transform)
-        dataset2 = torchvision.datasets.FashionMNIST('F_MnistData', train=False,
-                                                     transform=transform)
-        train_loader = torch.utils.data.DataLoader(dataset1, batch_size=2000)
-        test_loader = torch.utils.data.DataLoader(dataset2, batch_size=2000)
-
-        EnsembleNet = FMNISTEnsemble(num_ensembles=num_ensembles).to(DEVICE)
 
     if dataset == 'cifar10':
         transform = torchvision.transforms.Compose([
@@ -285,7 +257,8 @@ def main():
             # for opt in optimizer_list:
             #     opt.zero_grad()
             output, _ = EnsembleNet(data)
-                 
+            
+            # loss, avg_acc = ensemble_loss(output, targets)        
             loss, avg_acc = classification_loss(output, targets)
 
             loss.backward()

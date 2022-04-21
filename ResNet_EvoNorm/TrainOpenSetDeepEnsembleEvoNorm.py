@@ -12,7 +12,7 @@ from argparse import ArgumentParser
 from torch.utils.data import Subset
 from tqdm import tqdm
 from models import MNISTEnsemble, CifarEnsemble, FMNISTEnsemble, CifarEnsembleRes
-from utils import classification_loss, _classification_vote, ensemble_loss
+from utils import classification_loss, _classification_vote
 from sklearn.metrics import roc_auc_score
 from SGLD import SGLD
 # torch.set_default_tensor_type('torch.cuda.FloatTensor')
@@ -296,9 +296,7 @@ def main():
 
             output, _ = EnsembleNet(data)
 
-            loss, avg_acc = ensemble_loss(output, targets)
-
-            # loss, avg_acc = classification_loss(output, targets)
+            loss, avg_acc = classification_loss(output, targets)
 
             loss.backward()
             # for opt in optimizer_list:

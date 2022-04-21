@@ -6,7 +6,7 @@ import torch.optim as optim
 import numpy as np
 from tqdm import tqdm
 from models import MNISTEnsemble, CifarEnsemble, FMNISTEnsemble, CifarEnsembleRes
-from utils import classification_loss, _classification_vote, ensemble_loss
+from utils import classification_loss, _classification_vote
 # import torchsummary
 
 dataset = 'cifar10'  # can be 'mnist', 'f_mnist', 'cifar10'
@@ -106,9 +106,8 @@ for epoch in range(1, epochs):
         # for opt in optimizer_list:
         #     opt.zero_grad()
         output, _ = EnsembleNet(data)
-        
-        loss, avg_acc = ensemble_loss(output, targets)        
-        # loss, avg_acc = classification_loss(output, targets)
+          
+        loss, avg_acc = classification_loss(output, targets)
 
         loss.backward()
         optimizer.step()

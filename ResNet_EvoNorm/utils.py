@@ -3,41 +3,6 @@ import numpy as np
 import torch.nn.functional as F
 
 
-def ensemble_loss(output, target):
-    """Computes the cross entropy loss with respect to a batch of predictions and
-    targets.
-    
-    Args:
-        output (Tensor): predictions of shape ``[B, D]`` or ``[B, N, D]``.
-        target (Tensor): targets of shape ``[B]``, ``[B, 1]``, ``[B, N]``,
-            or ``[B, N, 1]``.
-
-    Returns:
-        LossInfo containing the computed cross entropy loss and the average
-            accuracy.
-    """
-
-    # import ipdb; ipdb.set_trace()
-
-    loss = 0
-
-    for i in range(output.shape[1]):
-        loss += F.cross_entropy(output[:,i,:], target[:,i], reduction='mean')
-
-    if output.ndim == 2:
-        output = output.reshape(output.shape[0], target.shape[1], -1)
-    pred = output.max(-1)[1]
-    target = target.squeeze(-1)
-    acc = pred.eq(target).float().mean(0)
-    avg_acc = acc.mean()
-    # if output.ndim == 3:
-    #     output = output.transpose(1, 2)
-    # else:
-    #     output = output.reshape(output.shape[0] * target.shape[1], -1)
-    #     target = target.reshape(-1)
-    # loss = F.cross_entropy(output, target, reduction='sum')
-    return loss, avg_acc
-
 
 def classification_loss(output, target):
     """Computes the cross entropy loss with respect to a batch of predictions and

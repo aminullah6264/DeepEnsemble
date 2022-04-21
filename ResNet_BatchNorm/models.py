@@ -210,6 +210,10 @@ class ResNet(nn.Module):
 def ResNet18():
     return ResNet(BasicBlock, [3, 3, 3]  , num_classes=10)
 
+model = ResNet18().to('cuda')
+from torchsummary import summary
+summary(model, (3, 32, 32))
+
 
 class CifarEnsembleRes(nn.Module):
     def __init__(self, num_ensembles = 10) -> None:

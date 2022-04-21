@@ -3,8 +3,6 @@ import numpy as np
 import torch.nn.functional as F
 
 
-
-
 def classification_loss(output, target):
     """Computes the cross entropy loss with respect to a batch of predictions and
     targets.
@@ -18,9 +16,6 @@ def classification_loss(output, target):
         LossInfo containing the computed cross entropy loss and the average
             accuracy.
     """
-
-    # import ipdb; ipdb.set_trace()
-
 
     if output.ndim == 2:
         output = output.reshape(output.shape[0], target.shape[1], -1)
