@@ -15,7 +15,7 @@ nonlinearities =    {'silu': lambda x: F.silu(x) / .5595,
 
 # Block base widths and depths for each variant
 params = {'NF-ResNet-18': {'width': [16, 32, 64],  'depth': [3, 3, 3],
-            'train_imsize': 32, 'test_imsize': 224,
+            'train_imsize': 32, 'test_imsize': 32,
             'weight_decay': 2e-5, 'drop_rate': 0.2},
         
             }
@@ -119,7 +119,7 @@ class NF_BasicBlock(nn.Module):
 
 class NF_ResNet(nn.Module):
     def __init__(self, block, num_blocks, num_classes=10, se_ratio=0.5, alpha=0.2, 
-    activation='silu', drop_rate=None, stochdepth_rate=0.0):
+    activation='relu', drop_rate=None, stochdepth_rate=0.0):
         super(NF_ResNet, self).__init__()
         self.in_planes = 16
         self.se_ratio = se_ratio
