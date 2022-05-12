@@ -308,11 +308,12 @@ def main():
         #     modelName = dataset + '_Ensemble_without_Adv_training.pt'
         #     torch.save(EnsembleNet.state_dict(), modelName)
         #     Best_Acc = train_acc
-        if uncertainty_eval:
-            if auc_entropy > best_auc_entropy:
-                modelName = dataset + 'DeepEnsemble_OpenSet_NF_ResNet_auc_entropy.pt'
-                torch.save(EnsembleNet.state_dict(), modelName)
-                best_auc_entropy = auc_entropy
+        # if uncertainty_eval:
+        #     if train_acc > Best_Acc:
+            modelName = 'checkpoints_DeepEnsemble_OpenSet_NF_ResNet_auc_entropyCifar6_' + str(epoch) + '.pt'
+            print('Model Saved')
+            torch.save(EnsembleNet.state_dict(), modelName)
+            best_auc_entropy = auc_entropy
 
 
 if __name__ == '__main__':

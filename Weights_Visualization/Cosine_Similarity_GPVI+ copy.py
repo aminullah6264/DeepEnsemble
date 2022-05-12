@@ -1,0 +1,375 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torchvision
+import torch.optim as optim
+import numpy as np
+from tqdm import tqdm
+from torch.utils.data import Subset
+import sys, os
+import functools
+sys.path.append(os.path.abspath(os.path.join('..', 'NF_ResNet')))
+import seaborn as sns
+from matplotlib import pyplot as plt
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def get_classes(target, labels):
+    label_indices = []
+    for i in range(len(target)):
+        if target[i][1] in labels:
+            label_indices.append(i)
+    return label_indices
+
+
+def _classification_vote(output, target, _voting = 'soft'):
+        """Ensemble the ooutputs from sampled classifiers."""
+        num_particles = output.shape[1]
+        probs = F.softmax(output, dim=-1)  # [B, N, D]
+        if _voting == 'soft':
+            pred = probs.mean(1).cpu()  # [B, D]
+            vote = pred.argmax(-1)
+            confidence, _ = pred.max(-1)
+            # confidence = pred.reshape(-1)
+
+
+        elif _voting == 'hard':
+            pred = probs.argmax(-1).cpu()  # [B, N, 1]
+            vote = []
+            for i in range(pred.shape[0]):
+                values, counts = torch.unique(
+                    pred[i], sorted=False, return_counts=True)
+                modes = (counts == counts.max()).nonzero()
+                label = values[torch.randint(len(modes), (1, ))]
+                vote.append(label)
+            vote = torch.as_tensor(vote, device='cpu')
+        correct = vote.eq(target.cpu().view_as(vote)).float().cpu().sum()
+        target = target.unsqueeze(1).expand(*target.shape[:1], num_particles,
+                                            *target.shape[1:])
+        # loss = classification_loss(output, target)
+        return [], correct, confidence
+
+
+# set up generator network
+def replace_weights_generator(generator, state_dict, keys_w, keys_b):
+    generator.linear1.weight.data = state_dict[keys_w[0]]
+    generator.linear2.weight.data = state_dict[keys_w[1]]
+    generator.linear3.weight.data = state_dict[keys_w[2]]
+    generator.linear4.weight.data = state_dict[keys_w[3]]
+
+    generator.linear1.bias.data = state_dict[keys_b[0]]
+    generator.linear2.bias.data = state_dict[keys_b[1]]
+    generator.linear3.bias.data = state_dict[keys_b[2]]
+    generator.linear4.bias.data = state_dict[keys_b[3]]
+    return generator
+
+def extract_parameters(models):
+    params = []
+    state_dict = {}
+    for model in models:
+        model_param = torch.tensor([]).to(DEVICE)
+        for name, param in model.named_parameters():
+            if param.requires_grad: # and 'bn' not in name:
+                p = param.view(-1).to(DEVICE)  #.clone().detach()
+                start_idx = len(model_param)
+                model_param = torch.cat((model_param, p), -1)
+                end_idx = len(model_param)
+                state_dict[name] = (param.shape, start_idx, end_idx)
+        state_dict['param_len'] = len(model_param)
+        params.append(model_param)
+    params = torch.stack(params)
+    return params, state_dict
+
+
+def insert_parameters(models, item_list, state_dict):
+    for i, model in enumerate(models):
+        for name, param in model.named_parameters():
+            if param.requires_grad:# and 'bn' not in name:                
+                shape, start, end = state_dict[name]
+                if len(shape) == 0:
+                    params_to_model = item_list[i, start:end].view(1)          
+                    param.data = params_to_model 
+                else:
+                    params_to_model = item_list[i, start:end].view(*shape)             
+                    param.data = params_to_model
+                    
+
+
+class Generator(nn.Module):
+    def __init__(self, h_dim):
+        super(Generator, self).__init__()
+        self.linear1 = nn.Linear(h_dim[0], h_dim[1], bias=True)
+        self.linear2 = nn.Linear(h_dim[2], h_dim[3], bias=True)
+        self.linear3 = nn.Linear(h_dim[4], h_dim[5], bias=True)
+        self.linear4 = nn.Linear(h_dim[6], h_dim[7], bias=True)
+
+    def forward(self, z):
+        x = self.linear1(z)
+        x = F.relu(x)
+        x = self.linear2(x)
+        x = F.relu(x)
+        x = self.linear3(x)
+        x = F.relu(x)
+        x = self.linear4(x)
+        return x
+
+
+
+# Nonlinearities. Note that we bake the constant into the
+# nonlinearites rather than the WS layers.
+nonlinearities =    {'silu': lambda x: F.silu(x) / .5595,
+                    'relu': lambda x: F.relu(x) / (0.5 * (1 - 1 / np.pi)) ** 0.5,
+                    'identity': lambda x: x}
+
+
+
+def count_params(module):
+    sum([item.numel() for item in module.parameters()])
+
+
+class ScaledWSConv2d(nn.Conv2d):
+    """2D Conv layer with Scaled Weight Standardization."""
+    def __init__(self, in_channels, out_channels, kernel_size,
+    stride=1, padding=0,
+    dilation=1, groups=1, bias=False, gain=False,
+    eps=1e-4):
+        nn.Conv2d.__init__(self, in_channels, out_channels,
+        kernel_size, stride,
+        padding, dilation,
+        groups, bias)
+        if gain:
+            self.gain = nn.Parameter(
+            torch.ones(self.out_channels, 1, 1, 1))
+        else:
+            self.gain = None
+        # Epsilon, a small constant to avoid dividing by zero.
+        self.eps = eps
+    def get_weight(self):
+        # Get Scaled WS weight OIHW;
+        
+        fan_in = np.prod(self.weight.shape[1:])
+        mean = torch.mean(self.weight, axis=[1, 2, 3],
+        keepdims=True)
+        var = torch.var(self.weight, axis=[1, 2, 3],
+        keepdims=True)
+        weight = (self.weight - mean) / (var * fan_in + self.eps) ** 0.5
+        if self.gain is not None:
+            weight = weight * self.gain
+        
+        return weight
+    def forward(self, x):
+        return F.conv2d(x, self.get_weight(), self.bias,
+        self.stride, self.padding,
+        self.dilation, self.groups)
+
+
+class SqueezeExcite(nn.Module):
+    """Simple Squeeze+Excite layers."""
+    def __init__(self, in_channels, width, activation):
+        super().__init__()
+        self.se_conv0 = nn.Conv2d(in_channels, width,
+        kernel_size=1, bias=False)
+        self.se_conv1 = nn.Conv2d(width, in_channels,
+        kernel_size=1, bias=False)
+        self.activation = activation
+
+    def forward(self, x):
+        # Mean pool for NCHW tensors
+        h = torch.mean(x, axis=[2, 3], keepdims=True)
+        # Apply two linear layers with activation in between
+        h = self.se_conv1(self.activation(self.se_conv0(h)))
+        # Rescale the sigmoid output and return
+        return (torch.sigmoid(h) * 2) * x
+
+
+
+
+class NF_BasicBlock(nn.Module):
+    expansion = 1
+
+    def __init__(self, in_planes, planes, stride=1, activation=F.relu, which_conv=ScaledWSConv2d,
+    beta=1.0, alpha=1.0, se_ratio=0.5):
+        super(NF_BasicBlock, self).__init__()
+
+        self.activation = activation
+        self.beta, self.alpha = beta, alpha
+
+        self.in_planes = in_planes
+        self.planes = planes
+        self.stride = stride
+        self.conv1 = which_conv(in_planes, planes, kernel_size=3, stride=stride, padding=1)
+        self.conv2 = which_conv(planes, planes, kernel_size=3, stride=1, padding=1)
+        
+
+        if stride != 1 or in_planes != planes:
+            self.shortcut_conv = which_conv(in_planes, self.expansion * planes, kernel_size=1, stride=stride)
+        
+        self.se = SqueezeExcite(self.expansion * planes, self.expansion * planes, self.activation)
+        self.skipinit_gain = nn.Parameter(torch.zeros(()))
+
+    def forward(self, x):
+        out = self.activation(x) / self.beta
+        if self.stride != 1 or self.in_planes != self.planes:
+            shortcut = self.shortcut_conv(out)
+        else:
+            shortcut = x
+        out = self.conv1(out) # Initial bottleneck conv
+        out = self.conv2(self.activation(out)) # Spatial conv
+        out = self.se(out) # Apply squeeze + excite to middle block.
+
+
+        return out * self.skipinit_gain * self.alpha + shortcut
+        
+      
+
+
+class NF_ResNet(nn.Module):
+    def __init__(self, block, num_blocks, num_classes=10, se_ratio=0.5, alpha=0.2, 
+    activation='silu', drop_rate=None, stochdepth_rate=0.0):
+        super(NF_ResNet, self).__init__()
+        self.in_planes = 16
+        self.se_ratio = se_ratio
+        self.alpha = alpha
+        self.activation = nonlinearities.get(activation)
+        self.stochdepth_rate = stochdepth_rate
+        self.which_conv = functools.partial(ScaledWSConv2d, gain=False, bias=False)
+
+        self.conv1 = self.which_conv(3, 16, kernel_size=3, stride=1, padding=1, gain=False, bias=False)
+        expected_var = 1.0
+        beta = expected_var ** 0.5
+        self.layer1 = self._make_layer(block, 16, num_blocks[0], stride=1, activation=self.activation,
+                                    which_conv=self.which_conv,
+                                    beta=beta, alpha=self.alpha,
+                                    se_ratio=self.se_ratio)
+        expected_var += self.alpha ** 2
+        beta = expected_var ** 0.5
+        self.layer2 = self._make_layer(block, 32, num_blocks[1], stride=2, activation=self.activation,
+                                    which_conv=self.which_conv,
+                                    beta=beta, alpha=self.alpha,
+                                    se_ratio=self.se_ratio)
+
+        expected_var += self.alpha ** 2
+        beta = expected_var ** 0.5
+        self.layer3 = self._make_layer(block, 64, num_blocks[2], stride=2, activation=self.activation,
+                                    which_conv=self.which_conv,
+                                    beta=beta, alpha=self.alpha,
+                                    se_ratio=self.se_ratio)
+        
+        self.linear = nn.Linear(64, num_classes, bias=True)
+        torch.nn.init.zeros_(self.linear.weight)
+
+    def _make_layer(self, block, planes, num_blocks, stride, activation=F.relu, which_conv=ScaledWSConv2d,
+    beta=1.0, alpha=1.0, se_ratio=0.5):
+        strides = [stride] + [1]*(num_blocks-1)
+        layers = []
+        for stride in strides:
+            layers.append(block(self.in_planes, planes, stride, activation=activation, which_conv=which_conv,
+    beta=beta, alpha=alpha, se_ratio=se_ratio))
+            self.in_planes = planes * block.expansion
+
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.layer1(out)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        out = F.avg_pool2d(out, out.size()[3])
+        out = out.view(out.size(0), -1)
+        out = self.linear(out)
+        return out
+
+
+class CifarEnsembleRes(nn.Module):
+    def __init__(self, model_weights_path) -> None:
+        super(CifarEnsembleRes, self).__init__()
+
+        self.models = nn.ModuleList()
+        self.ensemble_output = None
+
+
+        gpvi_weights_path = model_weights_path
+        state_dict = torch.load(gpvi_weights_path, map_location= DEVICE)
+
+          
+
+        weight_keys = list(state_dict.keys())[::2][:-1]         # last two layers are trained model BN mean and var
+        bias_keys = list(state_dict.keys())[1::2][:-1]
+
+        weight_size = []
+
+        for k in weight_keys:
+            weight_size.extend(state_dict[k].shape[::-1])
+       
+
+        assert len(weight_size) == 8, "should be 8 sizes of weights for 4 layers"
+        generator = Generator(weight_size).to(DEVICE)
+
+        generator = replace_weights_generator(generator, state_dict, weight_keys, bias_keys)
+        input_size = weight_size[0]
+        output_size = weight_size[-1]
+        for _ in range(10):
+            self.models.append(NF_ResNet(NF_BasicBlock, [3, 3, 3], num_classes=10)) 
+            
+
+        param_list, state_dict = extract_parameters(self.models)
+        input_noise = torch.randn(len(self.models), input_size).to(DEVICE)
+        sampled_weights = generator(input_noise)
+
+        # import ipdb; ipdb.set_trace()
+        print( param_list.shape, sampled_weights.shape)
+        param_list = sampled_weights
+
+        insert_parameters(self.models, param_list, state_dict)
+
+
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        ensemble_output = []
+        for model in self.models:
+            output = model(x)
+            ensemble_output.append(output)
+
+        self.ensemble_output = torch.stack(ensemble_output)
+
+        # import ipdb; ipdb.set_trace()
+        # output = torch.mean(self.ensemble_output, 0)
+        output = self.ensemble_output.permute(1,0,2)
+        
+        return output, self.ensemble_output
+
+
+
+
+
+model_weights_path = '/nfs/stak/users/ullaham/hpc-share/Adv/GPVIPlus_Updated/stochastic_parvi_GPVI+NF_ResNet/Normalize0_1%255/Standard_NF_ResNet_OpenSet_Stochastic_PaVI_1e-5_Entropy_1e-3_Cifar6_V2_GPVI+/generator.pt'
+EnsembleNet = CifarEnsembleRes(model_weights_path).to(DEVICE)
+
+num_particles = 10
+
+print('Params shape', params_.shape)
+
+empty_arr = np.zeros(shape=(num_particles,num_particles))
+
+for i in range(num_particles):
+  weights1 = params_[i]
+  for j in range(i, num_particles):
+    weights2 = params_[j]
+    
+    # compute cosine similarity of weights
+    cos_sim = np.dot(weights1, weights2)/(norm(weights1)*norm(weights2))
+    
+    empty_arr[i][j] = cos_sim
+    if i is not j:
+      empty_arr[j][i] = cos_sim
+
+cos_sim_coeff = empty_arr[::-1]
+
+
+plt.figure(figsize=(10,8))
+sns.heatmap(cos_sim_coeff, cmap='RdBu_r');
+# plt.xticks(np.arange(1, 10, step=2), np.arange(1, num_particles, 2));
+# plt.yticks(np.arange(1, 10, step=2), np.arange(num_particles-1, 0, -2));
+
+plt.savefig('GPVI+independent_functional_similarity.png')
