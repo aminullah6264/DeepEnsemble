@@ -71,7 +71,7 @@ def replace_weights_generator(generator, state_dict, keys_w, keys_b):
     generator.linear1.bias.data = state_dict[keys_b[0]]
     generator.linear2.bias.data = state_dict[keys_b[1]]
     generator.linear3.bias.data = state_dict[keys_b[2]]
-    generator.linear4.bias.data = state_dict[keys_b[3]]
+    # generator.linear4.bias.data = state_dict[keys_b[3]]
     return generator
 
 def extract_parameters(models):
@@ -112,7 +112,7 @@ class Generator(nn.Module):
         self.linear1 = nn.Linear(h_dim[0], h_dim[1], bias=True)
         self.linear2 = nn.Linear(h_dim[2], h_dim[3], bias=True)
         self.linear3 = nn.Linear(h_dim[4], h_dim[5], bias=True)
-        self.linear4 = nn.Linear(h_dim[6], h_dim[7], bias=True)
+        self.linear4 = nn.Linear(h_dim[6], h_dim[7], bias=False)
 
     def forward(self, z):
         x = self.linear1(z)
@@ -126,15 +126,15 @@ class Generator(nn.Module):
 
 
 
-model_weights_path = '/nfs/stak/users/ullaham/hpc-share/Adv/GPVIPlus_Updated/stochastic_parvi_GPVI+NF_ResNet/Normalize0_1%255/Standard_NF_ResNet_OpenSet_Stochastic_PaVI_1e-5_Entropy_1e-3_Cifar6_V2_GPVI+/generator.pt'
+model_weights_path = '/nfs/stak/users/ullaham/hpc-share/Adv/GPVIPlus_Updated/stochastic_parvi_GPVI+NF_ResNet/Normalize0_1%255/Standard_NF_ResNet_OpenSet_Stochastic_PaVI_1e-5_Entropy_1e-3_Cifar6_Test_Checkpoints_35GPVI+/generator.pt'
+# model_weights_path = 'SRIG_cifar_70_generator.pt'
 
 gpvi_weights_path = model_weights_path
 state_dict = torch.load(gpvi_weights_path, map_location= DEVICE)
 
-  
-
-weight_keys = list(state_dict.keys())[::2][:-1]         # last two layers are trained model BN mean and var
-bias_keys = list(state_dict.keys())[1::2][:-1]
+print(state_dict.keys())
+weight_keys = list(state_dict.keys())[::2]        
+bias_keys = list(state_dict.keys())[1::2]
 
 weight_size = []
 
@@ -149,7 +149,7 @@ generator = replace_weights_generator(generator, state_dict, weight_keys, bias_k
 input_size = weight_size[0]
 output_size = weight_size[-1]
 
-num_particles = 50
+num_particles = 10
 input_noise = torch.randn(num_particles, input_size).to(DEVICE)
 params_ = generator(input_noise).detach().cpu().numpy()
 

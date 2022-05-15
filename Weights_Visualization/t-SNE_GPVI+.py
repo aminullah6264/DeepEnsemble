@@ -1,5 +1,5 @@
-
-
+import sys, os
+sys.path.append(os.path.abspath(os.path.join('..', 'NF_ResNet')))
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,9 +9,9 @@ import numpy as np
 from tqdm import tqdm
 from torch.utils.data import Subset
 from sklearn.manifold import TSNE
-import sys, os
+
 import functools
-sys.path.append(os.path.abspath(os.path.join('..', 'NF_ResNet')))
+
 from matplotlib import pyplot as plt
 
 
@@ -33,10 +33,10 @@ def replace_weights_generator(generator, state_dict, keys_w, keys_b):
     generator.linear3.weight.data = state_dict[keys_w[2]]
     generator.linear4.weight.data = state_dict[keys_w[3]]
 
-    generator.linear1.bias.data = state_dict[keys_b[0]]
-    generator.linear2.bias.data = state_dict[keys_b[1]]
-    generator.linear3.bias.data = state_dict[keys_b[2]]
-    generator.linear4.bias.data = state_dict[keys_b[3]]
+    # generator.linear1.bias.data = state_dict[keys_b[0]]
+    # generator.linear2.bias.data = state_dict[keys_b[1]]
+    # generator.linear3.bias.data = state_dict[keys_b[2]]
+    # generator.linear4.bias.data = state_dict[keys_b[3]]
     return generator
 
 def extract_parameters(models):
@@ -77,7 +77,7 @@ class Generator(nn.Module):
         self.linear1 = nn.Linear(h_dim[0], h_dim[1], bias=True)
         self.linear2 = nn.Linear(h_dim[2], h_dim[3], bias=True)
         self.linear3 = nn.Linear(h_dim[4], h_dim[5], bias=True)
-        self.linear4 = nn.Linear(h_dim[6], h_dim[7], bias=True)
+        self.linear4 = nn.Linear(h_dim[6], h_dim[7], bias=False)
 
     def forward(self, z):
         x = self.linear1(z)
@@ -267,8 +267,8 @@ class CifarEnsembleRes(nn.Module):
 
           
 
-        weight_keys = list(state_dict.keys())[::2][:-1]         # last two layers are trained model BN mean and var
-        bias_keys = list(state_dict.keys())[1::2][:-1]
+        weight_keys = list(state_dict.keys())#[::2]       # last two layers are trained model BN mean and var
+        bias_keys = list(state_dict.keys())#[1::2]
 
         weight_size = []
 
@@ -314,8 +314,6 @@ class CifarEnsembleRes(nn.Module):
 
 
 
-
-
 transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor(), 
             torchvision.transforms.Normalize([0.4914, 0.4822, 0.4465],
                                              [0.2023, 0.1994, 0.2010])
@@ -335,12 +333,12 @@ outlier_testset = Subset(dataset2, get_classes(dataset2, outlier_label_idx))
 inlier_test_loader = torch.utils.data.DataLoader(inlier_testset, batch_size=1024)
 outlier_test_loader = torch.utils.data.DataLoader(outlier_testset, batch_size=1024)
 
-NUM_TRAJECTORIES = 3
+NUM_TRAJECTORIES = 10
 
 
 prob_ = []
 for i in range(40):
-  model_weights_path = '/nfs/stak/users/ullaham/hpc-share/Adv/GPVIPlus_Updated/stochastic_parvi_GPVI+NF_ResNet/Normalize0_1%255/Checkpoints40/Standard_NF_ResNet_OpenSet_Stochastic_PaVI_1e-5_Entropy_1e-3_Cifar6_Checkpoints_' +str(i+1) + 'GPVI+/generator.pt'
+  model_weights_path = '/nfs/stak/users/ullaham/hpc-share/Adv/GPVIPlus_Updated/stochastic_parvi_GPVI+NF_ResNet/Normalize0_1%255/Standard_NF_ResNet_OpenSet_Stochastic_PaVI_1e-5_Entropy_1e-3_Cifar6_Test_Checkpoints_' +str(i) + 'GPVI+/generator.pt'
 
   EnsembleNet = CifarEnsembleRes(model_weights_path).to(DEVICE)
 
@@ -350,15 +348,15 @@ for i in range(40):
       data, target = data.to(DEVICE), target.to(DEVICE)               
       with torch.no_grad():
           output, _ = EnsembleNet(data)
-          probs = F.softmax(output, dim=-1)[:,[0,5,9],:].permute(1,0,2)  # [B, N, D]   --> [N, B, D]  
+          probs = F.softmax(output, dim=-1)[:,:,:].permute(1,0,2)  # [B, N, D]   --> [N, B, D]  
           prob_.append(probs)
       break
 
 
 NUM_PARTICLES, NUM_EXAMPLES, NUM_CLASSES = probs.shape
 
-predictions_for_tsne = torch.cat(prob_).cpu()
-
+predictions_for_tsne = torch.cat(prob_, dim=1).cpu()
+print('[INFO] shape of predictions tensor: ', predictions_for_tsne.shape)
 # reshape the tensor 
 reshaped_predictions_for_tsne = predictions_for_tsne.reshape(-1, NUM_EXAMPLES*NUM_CLASSES)
 print('[INFO] shape of reshaped tensor: ', reshaped_predictions_for_tsne.shape)

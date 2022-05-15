@@ -66,13 +66,21 @@ num_particles = 10
 
 predictions = []
 correct = 0
+
+for batch_idx, (data, target) in tqdm(enumerate(inlier_test_loader), total=len(inlier_test_loader), smoothing=0.9):        
+    data, target = data.to(DEVICE), target.to(DEVICE)               
+    with torch.no_grad():
+        output, _ = EnsembleNet(data)
+        probs = F.softmax(output, dim=-1)  # [B, N, D]        
+        probs = probs.argmax(-1).permute(1,0)
+        predictions.append(probs)
+
+
 for batch_idx, (data, target) in tqdm(enumerate(outlier_test_loader), total=len(outlier_test_loader), smoothing=0.9):        
     data, target = data.to(DEVICE), target.to(DEVICE)               
     with torch.no_grad():
         output, _ = EnsembleNet(data)
-        probs = F.softmax(output, dim=-1)  # [B, N, D]
-        
-        
+        probs = F.softmax(output, dim=-1)  # [B, N, D]        
         probs = probs.argmax(-1).permute(1,0)
         predictions.append(probs)
 
@@ -87,7 +95,7 @@ for i in range(10):
     preds2 = predictions[j, :]
     # import ipdb; ipdb.set_trace()
     # compute dissimilarity
-    dissimilarity_score = 1-torch.sum(np.equal(preds1, preds2))/4000 
+    dissimilarity_score = 1-torch.sum(np.equal(preds1, preds2))/10000 
     
     empty_arr[i][j] = dissimilarity_score
     if i is not j:

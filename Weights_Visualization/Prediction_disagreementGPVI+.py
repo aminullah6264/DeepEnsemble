@@ -336,7 +336,7 @@ inlier_test_loader = torch.utils.data.DataLoader(inlier_testset, batch_size=512)
 outlier_test_loader = torch.utils.data.DataLoader(outlier_testset, batch_size=512)
 
 
-num_particles = 100 
+num_particles = 10 
 
 model_weights_path = '/nfs/stak/users/ullaham/hpc-share/Adv/GPVIPlus_Updated/stochastic_parvi_GPVI+NF_ResNet/Normalize0_1%255/Standard_NF_ResNet_OpenSet_Stochastic_PaVI_1e-5_Entropy_1e-3_Cifar6_V2_GPVI+/generator.pt'
 EnsembleNet = CifarEnsembleRes(model_weights_path, num_particles).to(DEVICE)
@@ -347,6 +347,17 @@ EnsembleNet.eval()
 
 predictions = []
 correct = 0
+
+for batch_idx, (data, target) in tqdm(enumerate(inlier_test_loader), total=len(inlier_test_loader), smoothing=0.9):        
+    data, target = data.to(DEVICE), target.to(DEVICE)               
+    with torch.no_grad():
+        output, _ = EnsembleNet(data)
+        probs = F.softmax(output, dim=-1)  # [B, N, D]        
+        probs = probs.argmax(-1).permute(1,0)
+        predictions.append(probs)
+
+
+
 for batch_idx, (data, target) in tqdm(enumerate(outlier_test_loader), total=len(outlier_test_loader), smoothing=0.9):        
     data, target = data.to(DEVICE), target.to(DEVICE)               
     with torch.no_grad():
@@ -366,7 +377,7 @@ for i in range(num_particles):
     preds2 = predictions[j, :]
     # import ipdb; ipdb.set_trace()
     # compute dissimilarity
-    dissimilarity_score = 1-torch.sum(np.equal(preds1, preds2))/4000 
+    dissimilarity_score = 1-torch.sum(np.equal(preds1, preds2))/10000 
     
     empty_arr[i][j] = dissimilarity_score
     if i is not j:

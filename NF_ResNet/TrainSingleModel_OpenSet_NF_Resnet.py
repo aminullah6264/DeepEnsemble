@@ -7,11 +7,11 @@ import torch.optim as optim
 import numpy as np
 import sys
 import pdb
-
+import os
 from argparse import ArgumentParser
 from torch.utils.data import Subset
 from tqdm import tqdm
-from nf_resnet import CifarEnsembleRes
+from nf_resnet import NF_ResNet18
 from utils import classification_loss, _classification_vote
 from sklearn.metrics import roc_auc_score
 # torch.set_default_tensor_type('torch.cuda.FloatTensor')
@@ -219,106 +219,83 @@ def main():
             train_loader = torch.utils.data.DataLoader(dataset1, batch_size=batch_size, shuffle = True)
             test_loader = torch.utils.data.DataLoader(dataset2, batch_size=500)
 
-        EnsembleNet = CifarEnsembleRes(num_ensembles=num_ensembles).to(DEVICE)
-
-
-    # optimizer_list = [torch.optim.SGD(m.parameters(), lr=initial_lr, momentum= 0.9, weight_decay= 1e-4) for m in
-    #                   EnsembleNet._get_list()]     
-
-    # lr_scheduler_list = [torch.optim.lr_scheduler.MultiStepLR(opt,
-    #                                                 milestones=[82, 123], last_epoch= -1 ) for opt in
-    #                   optimizer_list]  
+        Net = NF_ResNet18().to(DEVICE)
+    
+    ensemble_model_num = 10
 
     lr_ = 0.1
     momentum_ = 0.9
     wd_ = 1e-4
-    optimizer = torch.optim.SGD(EnsembleNet.parameters(), lr_,
+    optimizer = torch.optim.SGD(Net.parameters(), lr_,
                                 momentum= momentum_,
                                 weight_decay= wd_)
-
+    lossFun = nn.CrossEntropyLoss()
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
                                                         milestones=[82, 123], last_epoch= -1 )
+    path = 'Checkpoints3/SingleModel_'+str(ensemble_model_num)
+    if not os.path.exists(path):
+        os.makedirs(path)
+        print("The new directory is created!")
 
-    modelName = 'Checkpoints2/DeepEnsemble_OpenSet_NF_ResNet_auc_entropyCifar6_' + str(0) + '.pt'
+    modelName = 'Checkpoints3/SingleModel_'+str(ensemble_model_num)+'/OpenSet_NF_ResNet_Cifar6_' + str(0) + '.pt'
     print('Model Saved')
-    torch.save(EnsembleNet.state_dict(), modelName)
+    torch.save(Net.state_dict(), modelName)
                                    
 
     Best_Acc = 0
     for epoch in range(1, epochs):
         train_loss = 0
-        train_correct = []
+        train_correct = 0
 
-        EnsembleNet.train()
+        Net.train()
         if args.SGLD:
             learning_rate_scheduler(lr_scheduler,initial_lr=initial_lr,current_epoch=epoch,gamma=0.1)
         for batch_idx, (data, target) in tqdm(enumerate(train_loader), total=len(train_loader), smoothing=0.9):
             data, target = data.to(DEVICE), target.to(DEVICE)
 
-            targets = target.unsqueeze(1).expand(*target.shape[:1], num_ensembles,
-                                                 *target.shape[1:])
-
             optimizer.zero_grad()
-            # for opt in optimizer_list:
-            #     opt.zero_grad()
-            output, _ = EnsembleNet(data)
-                 
-            loss, avg_acc = classification_loss(output, targets)
 
+            output = Net(data)
+            loss = lossFun(output, target)
             loss.backward()
+            train_loss += loss
             optimizer.step()
-            # for opt in optimizer_list:
-            #     opt.step()
-
-            train_correct.append(avg_acc.item())
-            train_loss += loss.item()
+            pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+            train_correct += pred.eq(target.view_as(pred)).sum().item()
 
 
-        # for lr_s in lr_scheduler_list:
-        #     lr_s.step()
         lr_scheduler.step()
         train_loss /= len(train_loader)
-        train_acc = torch.as_tensor(train_correct).mean() * 100
+        train_acc = 100. * train_correct / (len(train_loader.dataset))
 
-        print('Epoch: {} ResNet-18 DeepEnsemble_OpenSet_NF_ResNet--> {} Dataset Training Loss = {:.4f}, Train Accuracy =  {:.2f}%, \n'.format(
-            epoch, dataset, train_loss, train_acc))
+        print('Epoch: {} SingleModel {} OpenSet_NF_ResNet--> {} Dataset Training Loss = {:.4f}, Train Accuracy =  {:.2f}%, \n'.format(
+             epoch, ensemble_model_num, dataset, train_loss, train_acc))
 
-        EnsembleNet.eval()
+        Net.eval()
 
         with torch.no_grad():
             correct = 0
-            preds_tensor, targets_tensor = [], []
             for batch_idx, (data, target) in tqdm(enumerate(test_loader), total=len(test_loader), smoothing=0.9):
                 data, target = data.to(DEVICE), target.to(DEVICE)
-                output, _ = EnsembleNet(data)
+                output = Net(data)
                 probs = F.softmax(output, dim=-1)
-                preds_tensor.append(probs)
-                targets_tensor.append(target)
-                _, acc = _classification_vote(output, target)
-                correct += acc.item()
+                pred = probs.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+                correct += pred.eq(target.view_as(pred)).sum().item()
+                
 
-            preds_tensor = torch.cat(preds_tensor, dim=0).mean(1)
-            targets_tensor = torch.cat(targets_tensor, dim=0)
-            ece = get_expected_calibration_error(preds_tensor, targets_tensor)
-            if uncertainty_eval:
-                assert 'outlier_loader' in locals(), "Only works with CIFAR10"
-                auc_entropy, auc_variance = eval_uncertainty(EnsembleNet, test_loader, outlier_loader)
-                print('Epoch: {} , Test Accuracy =  {:.2f}% ECE = {:.9f} AUC(Entropy) ={:.6f} \n'.format(
-                    epoch, 100. * correct / len(test_loader.dataset), ece, auc_entropy))
-            else:
-                print('Epoch: {} , Test Accuracy =  {:.2f}% ECE = {:.5f} \n'.format(
-                    epoch, 100. * correct / len(test_loader.dataset), ece))
+            print('Epoch: {} , Test Accuracy =  {:.2f}%  \n'.format(
+                epoch, 100. * correct / len(test_loader.dataset)))
 
-        # if train_acc > Best_Acc:
-        #     modelName = dataset + '_Ensemble_without_Adv_training.pt'
-        #     torch.save(EnsembleNet.state_dict(), modelName)
-        #     Best_Acc = train_acc
-        # if uncertainty_eval:
-        #     if train_acc > Best_Acc:
-            modelName = 'Checkpoints2/DeepEnsemble_OpenSet_NF_ResNet_auc_entropyCifar6_' + str(epoch) + '.pt'
-            print('Model Saved')
-            torch.save(EnsembleNet.state_dict(), modelName)
-            best_auc_entropy = auc_entropy
+            if epoch < 41:
+                modelName = 'Checkpoints3/SingleModel_'+str(ensemble_model_num)+'/OpenSet_NF_ResNet_Cifar6_' + str(epoch) + '.pt'
+                print('Model Saved')
+                torch.save(Net.state_dict(), modelName)
+            
+            if train_acc > Best_Acc:
+                modelName = 'Checkpoints3/SingleModel_'+str(ensemble_model_num)+'/BestModel_OpenSet_NF_ResNet_Cifar6_.pt'
+                print('Model Saved')
+                torch.save(Net.state_dict(), modelName)
+                Best_Acc = train_acc
 
 
 if __name__ == '__main__':

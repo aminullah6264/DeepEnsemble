@@ -72,7 +72,7 @@ outlier_testset = Subset(dataset2, get_classes(dataset2, outlier_label_idx))
 inlier_test_loader = torch.utils.data.DataLoader(inlier_testset, batch_size=1024)
 outlier_test_loader = torch.utils.data.DataLoader(outlier_testset, batch_size=1024)
 
-NUM_TRAJECTORIES = 10
+NUM_TRAJECTORIES = 1
 
 
 
