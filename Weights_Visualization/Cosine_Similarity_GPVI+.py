@@ -158,9 +158,9 @@ print('Params shape', params_.shape)
 empty_arr = np.zeros(shape=(num_particles,num_particles))
 
 for i in range(num_particles):
-  weights1 = params_[i]
+  weights1 = params_[i,:]
   for j in range(i, num_particles):
-    weights2 = params_[j]
+    weights2 = params_[j,:]
     
     # compute cosine similarity of weights
     cos_sim = np.dot(weights1, weights2)/(norm(weights1)*norm(weights2))
