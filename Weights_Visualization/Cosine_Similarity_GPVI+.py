@@ -68,9 +68,9 @@ def replace_weights_generator(generator, state_dict, keys_w, keys_b):
     generator.linear3.weight.data = state_dict[keys_w[2]]
     generator.linear4.weight.data = state_dict[keys_w[3]]
 
-    generator.linear1.bias.data = state_dict[keys_b[0]]
-    generator.linear2.bias.data = state_dict[keys_b[1]]
-    generator.linear3.bias.data = state_dict[keys_b[2]]
+    # generator.linear1.bias.data = state_dict[keys_b[0]]
+    # generator.linear2.bias.data = state_dict[keys_b[1]]
+    # generator.linear3.bias.data = state_dict[keys_b[2]]
     # generator.linear4.bias.data = state_dict[keys_b[3]]
     return generator
 
@@ -109,9 +109,9 @@ def insert_parameters(models, item_list, state_dict):
 class Generator(nn.Module):
     def __init__(self, h_dim):
         super(Generator, self).__init__()
-        self.linear1 = nn.Linear(h_dim[0], h_dim[1], bias=True)
-        self.linear2 = nn.Linear(h_dim[2], h_dim[3], bias=True)
-        self.linear3 = nn.Linear(h_dim[4], h_dim[5], bias=True)
+        self.linear1 = nn.Linear(h_dim[0], h_dim[1], bias=False)
+        self.linear2 = nn.Linear(h_dim[2], h_dim[3], bias=False)
+        self.linear3 = nn.Linear(h_dim[4], h_dim[5], bias=False)
         self.linear4 = nn.Linear(h_dim[6], h_dim[7], bias=False)
 
     def forward(self, z):
@@ -133,8 +133,8 @@ gpvi_weights_path = model_weights_path
 state_dict = torch.load(gpvi_weights_path, map_location= DEVICE)
 
 print(state_dict.keys())
-weight_keys = list(state_dict.keys())[::2]        
-bias_keys = list(state_dict.keys())[1::2]
+weight_keys = list(state_dict.keys())#[::2]        
+bias_keys = list(state_dict.keys())#[1::2]
 
 weight_size = []
 
